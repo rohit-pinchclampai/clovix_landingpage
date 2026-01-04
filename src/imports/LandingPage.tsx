@@ -292,24 +292,84 @@ function Button1() {
 
 function RegistrationForm() {
   const nameInputRef = React.useRef<HTMLInputElement>(null);
+  const formRef = React.useRef<HTMLFormElement>(null);
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [submitError, setSubmitError] = React.useState<string | null>(null);
+  const [submitSuccess, setSubmitSuccess] = React.useState(false);
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const formData = new FormData(e.currentTarget);
+    setIsSubmitting(true);
+    setSubmitError(null);
+    setSubmitSuccess(false);
+
+    const form = e.currentTarget || formRef.current;
+    if (!form) {
+      setIsSubmitting(false);
+      return;
+    }
+
+    const formData = new FormData(form);
     const data = {
-      name: formData.get('name'),
-      companyName: formData.get('companyName'),
-      email: formData.get('email'),
+      name: formData.get('name') as string,
+      companyName: formData.get('companyName') as string,
+      email: formData.get('email') as string,
     };
-    console.log('Registration data:', data);
-    // TODO: Add your API call here to save the registration data
-    alert('Thank you for registering! We will contact you soon.');
-    e.currentTarget.reset();
+
+    try {
+      // Get API URL from environment variable or use default
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      
+      const response = await fetch(`${apiUrl}/api/prospects`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: 'An error occurred' }));
+        const errorMessage = errorData.detail || `Error: ${response.statusText}`;
+        
+        // Handle "email already registered" as a success case
+        if (errorMessage.toLowerCase().includes('email already registered') || 
+            errorMessage.toLowerCase().includes('already registered')) {
+          setSubmitSuccess(true);
+          if (form) {
+            form.reset();
+          }
+          alert('You\'re already on our waitlist! We\'ll be in touch soon.');
+          return;
+        }
+        
+        throw new Error(errorMessage);
+      }
+
+      const result = await response.json();
+      console.log('Registration successful:', result);
+      setSubmitSuccess(true);
+      
+      // Reset form safely
+      if (form) {
+        form.reset();
+      }
+      
+      // Show success message
+      alert('Thank you for registering! We will contact you soon.');
+    } catch (error) {
+      console.error('Registration error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to submit registration. Please try again.';
+      setSubmitError(errorMessage);
+      alert(`Registration failed: ${errorMessage}`);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
 
   return (
-    <form id="registration-form" onSubmit={handleSubmit} className="content-stretch flex flex-col gap-[20px] items-start relative shrink-0 w-full max-w-[500px]">
+    <form ref={formRef} id="registration-form" onSubmit={handleSubmit} className="content-stretch flex flex-col gap-[20px] items-start relative shrink-0 w-full max-w-[500px]">
       <div className="flex flex-col gap-[16px] items-start relative shrink-0 w-full">
         <input
           ref={nameInputRef}
@@ -337,8 +397,19 @@ function RegistrationForm() {
           style={{ WebkitAppearance: 'none', appearance: 'none' }}
         />
       </div>
+      {submitError && (
+        <div className="text-red-300 text-sm w-full bg-red-500/20 border border-red-500/40 rounded-[8px] px-[16px] py-[12px]">
+          {submitError}
+        </div>
+      )}
+      {submitSuccess && (
+        <div className="text-green-300 text-sm w-full bg-green-500/20 border border-green-500/40 rounded-[8px] px-[16px] py-[12px]">
+          Registration successful! We'll be in touch soon.
+        </div>
+      )}
       <button
         type="submit"
+        disabled={isSubmitting}
         onClick={(e) => {
           // If form is invalid, scroll to form and focus first input
           const form = e.currentTarget.form;
@@ -351,9 +422,11 @@ function RegistrationForm() {
             }, 500);
           }
         }}
-        className="bg-[#ffc107] content-stretch flex items-center justify-center px-[33.777px] py-[16.888px] relative rounded-[4.222px] shrink-0 cursor-pointer hover:bg-[#ffb300] transition-colors w-full"
+        className="bg-[#ffc107] content-stretch flex items-center justify-center px-[33.777px] py-[16.888px] relative rounded-[4.222px] shrink-0 cursor-pointer hover:bg-[#ffb300] transition-colors w-full disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        <p className="capitalize font-['Inter:Semi_Bold',sans-serif] font-semibold leading-[25.333px] not-italic relative shrink-0 text-[#1e293b] text-[16.888px] text-nowrap">Join the waitlist</p>
+        <p className="capitalize font-['Inter:Semi_Bold',sans-serif] font-semibold leading-[25.333px] not-italic relative shrink-0 text-[#1e293b] text-[16.888px] text-nowrap">
+          {isSubmitting ? 'Submitting...' : 'Join the waitlist'}
+        </p>
       </button>
     </form>
   );
